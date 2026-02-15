@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="wi dth=device-width, initial-scale=1.0">
+  <title>LLM Chat</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <!-- highlight.js theme -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Chats</span>
+        <button @click="createConversation" class="new-chat-btn" title="New chat">+</button>
+      </div>
+      <div class="sidebar-list">
+        <div
+          v-for="conv in conversations"
+          :key="conv.id"
+          class="sidebar-item"
+          :class="{ active: conv.id === activeConversationId }"
+          @click="switchConversation(conv.id)"
+        >
+          <span class="sidebar-item-title">{{ conv.title }}</span>
+          <button
+            @click.stop="deleteConversation(conv.id)"
+            class="sidebar-item-delete"
+            title="Delete"
+          >&times;</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Chat panel -->
+    <div class="chat-panel">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-left">
+          <select v-model="selectedModel" class="model-select">
+            <option value="gemini-3-pro-preview">gemini-3-pro-preview (text)</option>
+            <option value="google/gemini-3-pro-image-preview">google/gemini-3-pro-image-preview (text + images)</option>
+          </select>
+          <span v-if="selectedModel === 'google/gemini-3-pro-image-preview'" class="image-badge">Image Generation</span>
+        </div>
+        <div class="header-right">
+          <button @click="togglePromptPanel" class="prompt-toggle-btn" :class="{ active: showPromptPanel }" title="System prompt">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+            </svg>
+          </button>
+          <input
+            type="password"
+            v-model="apiKey"
+            @change="saveApiKey"
+            placeholder="API Key"
+            class="api-key-input"
+          >
+        </div>
+      </header>
+
+      <!-- System prompt panel -->
+      <div v-if="showPromptPanel" class="prompt-panel">
+        <div class="prompt-panel-row">
+          <select @change="applySavedPrompt($event)" class="prompt-select">
+            <option value="">-- Load saved prompt --</option>
+            <option v-for="sp in savedPrompts" :key="sp.id" :value="sp.id">{{ sp.name }}</option>
+          </select>
+          <button @click="saveCurrentPrompt" class="prompt-save-btn" title="Save current prompt">Save</button>
+        </div>
+        <textarea
+          v-model="systemPrompt"
+          @input="onSystemPromptInput"
+          placeholder="System prompt (sent as first message to the model)..."
+          class="prompt-textarea"
+          rows="3"
+        ></textarea>
+        <div v-if="savedPrompts.length" class="prompt-library">
+          <div v-for="sp in savedPrompts" :key="sp.id" class="prompt-library-item">
+            <span class="prompt-library-name">{{ sp.name }}</span>
+            <button @click="deleteSavedPrompt(sp.id)" class="prompt-library-delete" title="Delete">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat area -->
+      <main class="chat-area" ref="chatArea">
+        <div v-if="messages.length === 0" class="empty-state">
+          Start a conversation by typing a message below.
+        </div>
+
+        <div
+          v-for="(msg, idx) in messages"
+          :key="idx"
+          class="message-row"
+          :class="msg.role"
+        >
+          <div class="message-bubble" :class="msg.role">
+            <!-- User message: plain text + images -->
+            <template v-if="msg.role === 'user'">
+              <div class="message-text">{{ msg.text }}</div>
+              <div v-if="msg.images && msg.images.length" class="message-images">
+                <img
+                  v-for="(img, i) in msg.images"
+                  :key="i"
+                  :src="img"
+                  class="message-image"
+                  @click="openLightbox(img)"
+                >
+              </div>
+            </template>
+
+            <!-- Assistant message: rendered markdown + generated images -->
+            <template v-else>
+              <div
+                v-if="msg.text"
+                class="message-text markdown-body"
+                v-html="renderMarkdown(msg.text)"
+              ></div>
+              <div v-if="msg.images && msg.images.length" class="message-images">
+                <img
+                  v-for="(img, i) in msg.images"
+                  :key="i"
+                  :src="img"
+                  class="message-image"
+                  @click="openLightbox(img)"
+                >
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div v-if="isLoading" class="message-row assistant">
+          <div class="message-bubble assistant loading-bubble">
+            <div class="loading-dots">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Error banner -->
+      <div v-if="errorMessage" class="error-banner">
+        {{ errorMessage }}
+        <button @click="errorMessage = ''" class="error-close">&times;</button>
+      </div>
+
+      <!-- Attached image previews -->
+      <div v-if="attachedImages.length" class="attachments-bar">
+        <div v-for="(img, idx) in attachedImages" :key="idx" class="attachment-thumb">
+          <img :src="img" class="thumb-img">
+          <button @click="removeAttachment(idx)" class="thumb-remove">&times;</button>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <footer class="input-area">
+        <button @click="triggerFileInput" class="attach-btn" title="Attach image">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+        <input type="file" ref="fileInput" @change="onFileSelected" accept="image/*" multiple style="display:none">
+        <textarea
+          v-model="inputText"
+          @keydown.enter.exact.prevent="sendMessage"
+          placeholder="Type a message..."
+          class="message-input"
+          rows="1"
+          @input="autoResize"
+          ref="messageInput"
+        ></textarea>
+        <button @click="sendMessage" :disabled="isLoading || (!inputText.trim() && !attachedImages.length)" class="send-btn" title="Send">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </footer>
+    </div>
+
+    <!-- Lightbox overlay -->
+    <div v-if="lightboxSrc" class="lightbox-overlay" @click="closeLightbox">
+      <img :src="lightboxSrc" class="lightbox-image" @click.stop>
+    </div>
+  </div>
+
+  <!-- CDN Dependencies -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.9/purify.min.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
