@@ -42,6 +42,14 @@ createApp({
     }
   },
 
+  computed: {
+    canRetry() {
+      return this.messages.length > 0
+        && this.messages[this.messages.length - 1].role === 'user'
+        && !this.isLoading;
+    },
+  },
+
   methods: {
     // ── Lightbox ──
     openLightbox(src) {
@@ -376,36 +384,8 @@ createApp({
       return { text, images };
     },
 
-    // ── Send message ──
-    async sendMessage() {
-      const text = this.inputText.trim();
-      const images = [...this.attachedImages];
-
-      if (!text && !images.length) return;
-
-      if (!this.apiKey) {
-        this.errorMessage = 'Please enter your API key first.';
-        return;
-      }
-
-      // Add user message to UI
-      const userMsg = { role: 'user', text, images };
-      this.messages.push(userMsg);
-      this.inputText = '';
-      this.attachedImages = [];
-      this.$nextTick(() => {
-        const el = this.$refs.messageInput;
-        if (el) {
-          el.style.height = 'auto';
-        }
-      });
-      this.scrollToBottom();
-
-      // Save user message to backend
-      await this.saveMessage('user', text, images);
-      await this.refreshSidebar();
-
-      // Call API
+    // ── Call LLM API and handle response ──
+    async callLlm() {
       this.isLoading = true;
       this.errorMessage = '';
 
@@ -450,6 +430,44 @@ createApp({
         this.isLoading = false;
         this.scrollToBottom();
       }
+    },
+
+    // ── Send message ──
+    async sendMessage() {
+      const text = this.inputText.trim();
+      const images = [...this.attachedImages];
+
+      if (!text && !images.length) return;
+
+      if (!this.apiKey) {
+        this.errorMessage = 'Please enter your API key first.';
+        return;
+      }
+
+      // Add user message to UI
+      const userMsg = { role: 'user', text, images };
+      this.messages.push(userMsg);
+      this.inputText = '';
+      this.attachedImages = [];
+      this.$nextTick(() => {
+        const el = this.$refs.messageInput;
+        if (el) {
+          el.style.height = 'auto';
+        }
+      });
+      this.scrollToBottom();
+
+      // Save user message to backend
+      await this.saveMessage('user', text, images);
+      await this.refreshSidebar();
+
+      await this.callLlm();
+    },
+
+    // ── Retry last message ──
+    async retryMessage() {
+      if (!this.canRetry) return;
+      await this.callLlm();
     },
   },
 }).mount('#app');

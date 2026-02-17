@@ -516,6 +516,33 @@ body {
   background: #e0e0e0;
 }
 
+.retry-btn {
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid #d0d0d0;
+  border-radius: 50%;
+  background: #fff;
+  color: #555;
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.retry-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+  border-color: #0084ff;
+  color: #0084ff;
+}
+
+.retry-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .send-btn {
   background: #0084ff;
   color: #fff;
