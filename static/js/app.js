@@ -35,11 +35,25 @@ createApp({
     this.loadApiKey();
     await this.loadSavedPrompts();
     await this.loadConversations();
-    if (this.conversations.length > 0) {
-      await this.switchConversation(this.conversations[0].id);
+
+    const hashId = this.getConversationIdFromHash();
+    const hashConvExists = hashId && this.conversations.some(c => c.id === hashId);
+
+    if (hashConvExists) {
+      await this.switchConversation(hashId, { pushHistory: false });
+    } else if (this.conversations.length > 0) {
+      if (hashId) this.setHashForConversation(null);
+      await this.switchConversation(this.conversations[0].id, { pushHistory: false });
     } else {
       await this.createConversation();
     }
+
+    window.addEventListener('hashchange', async () => {
+      const newId = this.getConversationIdFromHash();
+      if (newId && newId !== this.activeConversationId && this.conversations.some(c => c.id === newId)) {
+        await this.switchConversation(newId, { pushHistory: false });
+      }
+    });
   },
 
   computed: {
@@ -51,6 +65,25 @@ createApp({
   },
 
   methods: {
+    // ── URL hash helpers ──
+    getConversationIdFromHash() {
+      const match = window.location.hash.match(/^#\/chat\/(\d+)$/);
+      return match ? Number(match[1]) : null;
+    },
+
+    setHashForConversation(convId, replace = false) {
+      if (convId) {
+        const newHash = `#/chat/${convId}`;
+        if (replace) {
+          history.replaceState(null, '', newHash);
+        } else {
+          window.location.hash = newHash;
+        }
+      } else {
+        history.replaceState(null, '', window.location.pathname);
+      }
+    },
+
     // ── Lightbox ──
     openLightbox(src) {
       this.lightboxSrc = src;
@@ -82,7 +115,7 @@ createApp({
       const resp = await fetch('/api/conversations', { method: 'POST' });
       const conv = await resp.json();
       this.conversations.unshift(conv);
-      await this.switchConversation(conv.id);
+      await this.switchConversation(conv.id, { pushHistory: false });
     },
 
     async deleteConversation(convId) {
@@ -92,13 +125,15 @@ createApp({
         if (this.conversations.length > 0) {
           await this.switchConversation(this.conversations[0].id);
         } else {
+          this.setHashForConversation(null);
           await this.createConversation();
         }
       }
     },
 
-    async switchConversation(convId) {
+    async switchConversation(convId, { pushHistory = true } = {}) {
       this.activeConversationId = convId;
+      this.setHashForConversation(convId, !pushHistory);
       const conv = this.conversations.find(c => c.id === convId);
       this.systemPrompt = conv ? conv.system_prompt || '' : '';
       const resp = await fetch(`/api/conversations/${convId}/messages`);
