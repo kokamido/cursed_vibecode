@@ -17,8 +17,7 @@ createApp({
       messages: [],
       inputText: '',
       attachedImages: [],
-      apiKey: '',
-      selectedModel: 'gemini-3-pro-preview',
+      selectedModel: 'google/gemini-3-pro-preview',
       isLoading: false,
       errorMessage: '',
       conversations: [],
@@ -28,11 +27,17 @@ createApp({
       savedPrompts: [],
       showPromptPanel: false,
       _promptSaveTimer: null,
+      // Endpoints
+      endpoints: [],
+      activeEndpointId: null,
+      showEndpointPanel: false,
+      newEndpoint: { name: '', base_url: '', api_key: '' },
     };
   },
 
   async mounted() {
-    this.loadApiKey();
+    await this.loadEndpoints();
+    this.loadActiveEndpointId();
     await this.loadSavedPrompts();
     await this.loadConversations();
 
@@ -58,9 +63,9 @@ createApp({
 
   computed: {
     canRetry() {
-      return this.messages.length > 0
-        && this.messages[this.messages.length - 1].role === 'user'
-        && !this.isLoading;
+      if (this.isLoading || this.messages.length === 0) return false;
+      const last = this.messages[this.messages.length - 1];
+      return last.role === 'user' || last.role === 'assistant';
     },
   },
 
@@ -93,15 +98,22 @@ createApp({
       this.lightboxSrc = null;
     },
 
-    // ── Cookie helpers ──
-    saveApiKey() {
-      document.cookie = `apiKey=${encodeURIComponent(this.apiKey)};path=/;max-age=31536000;SameSite=Lax`;
+    // ── Endpoint persistence ──
+    loadActiveEndpointId() {
+      const stored = localStorage.getItem('activeEndpointId');
+      const storedId = stored ? Number(stored) : null;
+      if (storedId && this.endpoints.some(e => e.id === storedId)) {
+        this.activeEndpointId = storedId;
+      } else if (this.endpoints.length > 0) {
+        this.activeEndpointId = this.endpoints[0].id;
+      }
     },
 
-    loadApiKey() {
-      const match = document.cookie.match(/(?:^|;\s*)apiKey=([^;]*)/);
-      if (match) {
-        this.apiKey = decodeURIComponent(match[1]);
+    saveActiveEndpointId() {
+      if (this.activeEndpointId) {
+        localStorage.setItem('activeEndpointId', String(this.activeEndpointId));
+      } else {
+        localStorage.removeItem('activeEndpointId');
       }
     },
 
@@ -210,6 +222,49 @@ createApp({
 
     togglePromptPanel() {
       this.showPromptPanel = !this.showPromptPanel;
+    },
+
+    // ── Endpoints ──
+    async loadEndpoints() {
+      const resp = await fetch('/api/endpoints');
+      this.endpoints = await resp.json();
+    },
+
+    async createEndpoint() {
+      const { name, base_url, api_key } = this.newEndpoint;
+      if (!name.trim() || !base_url.trim()) return;
+      const resp = await fetch('/api/endpoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), base_url: base_url.trim(), api_key: api_key.trim() }),
+      });
+      if (resp.ok) {
+        const ep = await resp.json();
+        this.endpoints.push(ep);
+        this.newEndpoint = { name: '', base_url: '', api_key: '' };
+        if (!this.activeEndpointId) {
+          this.activeEndpointId = ep.id;
+          this.saveActiveEndpointId();
+        }
+      }
+    },
+
+    async deleteEndpoint(epId) {
+      await fetch(`/api/endpoints/${epId}`, { method: 'DELETE' });
+      this.endpoints = this.endpoints.filter(e => e.id !== epId);
+      if (this.activeEndpointId === epId) {
+        this.activeEndpointId = this.endpoints[0]?.id ?? null;
+        this.saveActiveEndpointId();
+      }
+    },
+
+    toggleEndpointPanel() {
+      this.showEndpointPanel = !this.showEndpointPanel;
+    },
+
+    onEndpointChange(event) {
+      this.activeEndpointId = Number(event.target.value);
+      this.saveActiveEndpointId();
     },
 
     // ── Image attachment ──
@@ -353,7 +408,8 @@ createApp({
 
     // ── Get API endpoint based on model ──
     getApiEndpoint() {
-      return this.isImageModel() ? '/api/v1/chat/completions' : '/api/v1/responses';
+      const path = this.isImageModel() ? '/api/v1/chat/completions' : '/api/v1/responses';
+      return `${path}?endpoint_id=${this.activeEndpointId}`;
     },
 
     // ── Parse response ──
@@ -421,6 +477,11 @@ createApp({
 
     // ── Call LLM API and handle response ──
     async callLlm() {
+      if (!this.activeEndpointId) {
+        this.errorMessage = 'Please add and select an API endpoint first.';
+        return false;
+      }
+
       this.isLoading = true;
       this.errorMessage = '';
 
@@ -429,10 +490,7 @@ createApp({
         const endpoint = this.getApiEndpoint();
         const resp = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + this.apiKey,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
 
@@ -444,23 +502,27 @@ createApp({
             if (parsed.images.length > 0) {
               const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images };
               this.messages.push(assistantMsg);
-              await this.saveMessage('assistant', parsed.text, parsed.images);
+              const saved = await this.saveMessage('assistant', parsed.text, parsed.images);
+              assistantMsg.id = saved.id;
               await this.refreshSidebar();
-              return;
+              return true;
             }
           }
           const errMsg = data.error?.message || data.error || JSON.stringify(data);
           this.errorMessage = `API error (${resp.status}): ${errMsg}`;
-          return;
+          return false;
         }
 
         const parsed = this.parseResponse(data, false);
         const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images };
         this.messages.push(assistantMsg);
-        await this.saveMessage('assistant', parsed.text, parsed.images);
+        const saved = await this.saveMessage('assistant', parsed.text, parsed.images);
+        assistantMsg.id = saved.id;
         await this.refreshSidebar();
+        return true;
       } catch (err) {
         this.errorMessage = 'Request failed: ' + err.message;
+        return false;
       } finally {
         this.isLoading = false;
         this.scrollToBottom();
@@ -474,8 +536,8 @@ createApp({
 
       if (!text && !images.length) return;
 
-      if (!this.apiKey) {
-        this.errorMessage = 'Please enter your API key first.';
+      if (!this.activeEndpointId) {
+        this.errorMessage = 'Please add and select an API endpoint first.';
         return;
       }
 
@@ -502,7 +564,18 @@ createApp({
     // ── Retry last message ──
     async retryMessage() {
       if (!this.canRetry) return;
-      await this.callLlm();
+      const last = this.messages[this.messages.length - 1];
+      if (last.role === 'assistant') {
+        this.messages.pop();
+        const ok = await this.callLlm();
+        if (ok && last.id) {
+          await fetch(`/api/conversations/${this.activeConversationId}/messages/${last.id}`, { method: 'DELETE' });
+        } else if (!ok) {
+          this.messages.push(last);
+        }
+      } else {
+        await this.callLlm();
+      }
     },
   },
 }).mount('#app');

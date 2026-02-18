@@ -12,7 +12,7 @@ It's crucial to use OpenAI responses API format, not native Google lib.
     - read the answer from the model 
 
 - Two model available to choise: 
-    - gemini-3-pro-preview - it answers with text
+    - google/gemini-3-pro-preview - it answers with text
     - google/gemini-3-pro-image-preview - it may generate pictures and answer with text
 
 - Hardcoded base url for LLM api: https://api.vsellm.ru. Maybe we need some kind of ridiculous simple backend to deal with CORS.

@@ -41,5 +41,5 @@ Open it in your browser, enter your API key in the input field, and start chatti
 
 ## Available Models
 
-- **gemini-3-pro-preview** — text responses
+- **google/gemini-3-pro-preview** — text responses
 - **google/gemini-3-pro-image-preview** — text + image generation

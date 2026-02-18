@@ -8,11 +8,10 @@ import aiohttp_cors
 from db import (
     init_db, list_conversations, create_conversation, delete_conversation,
     rename_conversation, set_conversation_system_prompt,
-    get_messages, add_message,
+    get_messages, add_message, delete_message,
     list_system_prompts, create_system_prompt, delete_system_prompt,
+    list_endpoints, get_endpoint, create_endpoint, delete_endpoint,
 )
-
-UPSTREAM_BASE = "https://api.vsellm.ru"
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -24,15 +23,24 @@ async def proxy_handler(request):
     """Proxy requests to the upstream API, preserving the sub-path."""
     sub_path = request.match_info.get("path", "responses")
     body = await request.read()
-    headers = {}
-    if "Authorization" in request.headers:
-        headers["Authorization"] = request.headers["Authorization"]
-    headers["Content-Type"] = "application/json"
+
+    endpoint_id = request.rel_url.query.get("endpoint_id")
+    if not endpoint_id:
+        return web.json_response({"error": "endpoint_id query param required"}, status=400)
+    endpoint = await get_endpoint(int(endpoint_id))
+    if not endpoint:
+        return web.json_response({"error": "Endpoint not found"}, status=404)
+
+    base_url = endpoint["base_url"].rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {endpoint['api_key']}",
+        "Content-Type": "application/json",
+    }
 
     session: ClientSession = request.app["client_session"]
     try:
         async with session.post(
-            f"{UPSTREAM_BASE}/v1/{sub_path}",
+            f"{base_url}/v1/{sub_path}",
             data=body,
             headers=headers,
         ) as upstream_resp:
@@ -97,6 +105,12 @@ async def messages_create_handler(request):
     return web.json_response(msg, status=201)
 
 
+async def messages_delete_handler(request):
+    msg_id = int(request.match_info["msg_id"])
+    await delete_message(msg_id)
+    return web.json_response({"ok": True})
+
+
 # ── System Prompts Library endpoints ──
 
 async def prompts_list_handler(request):
@@ -117,6 +131,30 @@ async def prompts_create_handler(request):
 async def prompts_delete_handler(request):
     prompt_id = int(request.match_info["id"])
     await delete_system_prompt(prompt_id)
+    return web.json_response({"ok": True})
+
+
+# ── Endpoint endpoints ──
+
+async def endpoints_list_handler(request):
+    eps = await list_endpoints()
+    return web.json_response(eps)
+
+
+async def endpoints_create_handler(request):
+    data = await request.json()
+    name = data.get("name", "").strip()
+    base_url = data.get("base_url", "").strip()
+    api_key = data.get("api_key", "").strip()
+    if not name or not base_url:
+        return web.json_response({"error": "name and base_url required"}, status=400)
+    ep = await create_endpoint(name, base_url, api_key)
+    return web.json_response(ep, status=201)
+
+
+async def endpoints_delete_handler(request):
+    ep_id = int(request.match_info["id"])
+    await delete_endpoint(ep_id)
     return web.json_response({"ok": True})
 
 
@@ -148,11 +186,17 @@ def create_app():
     # Message routes
     app.router.add_get("/api/conversations/{id}/messages", messages_list_handler)
     app.router.add_post("/api/conversations/{id}/messages", messages_create_handler)
+    app.router.add_delete("/api/conversations/{id}/messages/{msg_id}", messages_delete_handler)
 
     # System prompts library routes
     app.router.add_get("/api/prompts", prompts_list_handler)
     app.router.add_post("/api/prompts", prompts_create_handler)
     app.router.add_delete("/api/prompts/{id}", prompts_delete_handler)
+
+    # Endpoint routes
+    app.router.add_get("/api/endpoints", endpoints_list_handler)
+    app.router.add_post("/api/endpoints", endpoints_create_handler)
+    app.router.add_delete("/api/endpoints/{id}", endpoints_delete_handler)
 
     app.router.add_static("/static", STATIC_DIR, show_index=False)
 

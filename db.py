@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS system_prompts (
     text       TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS endpoints (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    base_url   TEXT NOT NULL,
+    api_key    TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -51,6 +59,16 @@ async def init_db():
             await db.execute("ALTER TABLE conversations ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
+        # Idempotent migration: create endpoints table if missing
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS endpoints (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                base_url   TEXT NOT NULL,
+                api_key    TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        """)
         await db.commit()
 
 
@@ -163,6 +181,13 @@ async def get_messages(conv_id):
         return msgs
 
 
+async def delete_message(msg_id):
+    async with _db() as db:
+        await db.execute("PRAGMA foreign_keys = ON")
+        await db.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+        await db.commit()
+
+
 async def add_message(conv_id, role, text, images=None):
     async with _db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
@@ -209,3 +234,49 @@ async def add_message(conv_id, role, text, images=None):
         await db.commit()
 
         return {"id": msg_id, "role": role, "text": text, "images": images or [], "sort_order": sort_order}
+
+
+# ── Endpoints ──
+
+async def list_endpoints():
+    async with _db() as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, name, base_url, api_key, created_at FROM endpoints ORDER BY name"
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def get_endpoint(endpoint_id):
+    async with _db() as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, name, base_url, api_key FROM endpoints WHERE id = ?",
+            (endpoint_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def create_endpoint(name, base_url, api_key):
+    async with _db() as db:
+        cursor = await db.execute(
+            "INSERT INTO endpoints (name, base_url, api_key) VALUES (?, ?, ?)",
+            (name, base_url, api_key),
+        )
+        await db.commit()
+        endpoint_id = cursor.lastrowid
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, name, base_url, api_key, created_at FROM endpoints WHERE id = ?",
+            (endpoint_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row)
+
+
+async def delete_endpoint(endpoint_id):
+    async with _db() as db:
+        await db.execute("DELETE FROM endpoints WHERE id = ?", (endpoint_id,))
+        await db.commit()

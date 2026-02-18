@@ -42,26 +42,45 @@
       <header class="header">
         <div class="header-left">
           <select v-model="selectedModel" class="model-select">
-            <option value="gemini-3-pro-preview">gemini-3-pro-preview (text)</option>
+            <option value="google/gemini-3-pro-preview">google/gemini-3-pro-preview (text)</option>
             <option value="google/gemini-3-pro-image-preview">google/gemini-3-pro-image-preview (text + images)</option>
           </select>
           <span v-if="selectedModel === 'google/gemini-3-pro-image-preview'" class="image-badge">Image Generation</span>
         </div>
         <div class="header-right">
+          <select :value="activeEndpointId" @change="onEndpointChange($event)" class="endpoint-select">
+            <option :value="null" disabled>-- endpoint --</option>
+            <option v-for="ep in endpoints" :key="ep.id" :value="ep.id">{{ ep.name }}</option>
+          </select>
+          <button @click="toggleEndpointPanel" class="prompt-toggle-btn" :class="{ active: showEndpointPanel }" title="Manage endpoints">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
           <button @click="togglePromptPanel" class="prompt-toggle-btn" :class="{ active: showPromptPanel }" title="System prompt">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
             </svg>
           </button>
-          <input
-            type="password"
-            v-model="apiKey"
-            @change="saveApiKey"
-            placeholder="API Key"
-            class="api-key-input"
-          >
         </div>
       </header>
+
+      <!-- Endpoint management panel -->
+      <div v-if="showEndpointPanel" class="prompt-panel">
+        <div v-if="endpoints.length === 0" class="endpoint-empty">No endpoints configured yet.</div>
+        <div v-for="ep in endpoints" :key="ep.id" class="endpoint-item">
+          <span class="endpoint-name">{{ ep.name }}</span>
+          <span class="endpoint-url">{{ ep.base_url }}</span>
+          <button @click="deleteEndpoint(ep.id)" class="prompt-library-delete" title="Delete">&times;</button>
+        </div>
+        <div class="endpoint-form">
+          <input v-model="newEndpoint.name" placeholder="Name" class="endpoint-input">
+          <input v-model="newEndpoint.base_url" placeholder="Base URL (e.g. https://api.openai.com)" class="endpoint-input">
+          <input v-model="newEndpoint.api_key" type="password" placeholder="API Key" class="endpoint-input">
+          <button @click="createEndpoint" class="prompt-save-btn">Add</button>
+        </div>
+      </div>
 
       <!-- System prompt panel -->
       <div v-if="showPromptPanel" class="prompt-panel">

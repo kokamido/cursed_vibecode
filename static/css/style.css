@@ -174,12 +174,14 @@ body {
   white-space: nowrap;
 }
 
-.api-key-input {
+.endpoint-select {
   padding: 6px 10px;
   border: 1px solid #d0d0d0;
   border-radius: 6px;
   font-size: 14px;
-  width: 200px;
+  background: #fff;
+  cursor: pointer;
+  max-width: 160px;
 }
 
 /* ── Prompt Toggle Button ── */
@@ -673,6 +675,59 @@ body {
   border: none;
   border-top: 1px solid #ddd;
   margin: 12px 0;
+}
+
+/* ── Endpoint Panel ── */
+.endpoint-empty {
+  font-size: 13px;
+  color: #999;
+  padding: 4px 0;
+}
+
+.endpoint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.endpoint-name {
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+}
+
+.endpoint-url {
+  flex: 1;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.endpoint-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.endpoint-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 5px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+}
+
+.endpoint-input:focus {
+  border-color: #0084ff;
 }
 
 /* ── Lightbox ── */
