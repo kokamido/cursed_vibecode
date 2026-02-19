@@ -44,10 +44,9 @@
       <header class="header">
         <div class="header-left">
           <select v-model="selectedModel" class="model-select">
-            <option value="google/gemini-3-pro-preview">google/gemini-3-pro-preview (text)</option>
-            <option value="google/gemini-3-pro-image-preview">google/gemini-3-pro-image-preview (text + images)</option>
+            <option v-for="model in models" :key="model.id" :value="model.id">{{ model.label }}</option>
           </select>
-          <span v-if="selectedModel === 'google/gemini-3-pro-image-preview'" class="image-badge">Image Generation</span>
+          <span v-if="isImageModel()" class="image-badge">Image Generation</span>
         </div>
         <div class="header-right">
           <select :value="activeEndpointId" @change="onEndpointChange($event)" class="endpoint-select">

@@ -13,10 +13,17 @@ from db import (
     list_endpoints, get_endpoint, create_endpoint, delete_endpoint,
 )
 STATIC_DIR = Path(__file__).parent / "static"
+MODELS_FILE = Path(__file__).parent / "models.json"
 
 
 async def index_handler(request):
     return web.FileResponse(STATIC_DIR / "index.html")
+
+
+async def models_handler(request):
+    with open(MODELS_FILE) as f:
+        data = json.load(f)
+    return web.json_response(data)
 
 
 async def proxy_handler(request):
@@ -182,6 +189,7 @@ def create_app():
     app.on_cleanup.append(on_cleanup)
 
     app.router.add_get("/", index_handler)
+    app.router.add_get("/api/models", models_handler)
     app.router.add_post("/api/v1/{path:responses|chat/completions}", proxy_handler)
 
     # Conversation routes

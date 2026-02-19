@@ -17,7 +17,8 @@ createApp({
       messages: [],
       inputText: '',
       attachedImages: [],
-      selectedModel: 'google/gemini-3-pro-preview',
+      models: [],
+      selectedModel: '',
       isLoading: false,
       errorMessage: '',
       conversations: [],
@@ -36,6 +37,7 @@ createApp({
   },
 
   async mounted() {
+    await this.fetchModels();
     await this.loadEndpoints();
     this.loadActiveEndpointId();
     await this.loadSavedPrompts();
@@ -70,6 +72,16 @@ createApp({
   },
 
   methods: {
+    // ── Models ──
+    async fetchModels() {
+      const resp = await fetch('/api/models');
+      const data = await resp.json();
+      this.models = data.models || [];
+      if (this.models.length > 0) {
+        this.selectedModel = this.models[0].id;
+      }
+    },
+
     // ── URL hash helpers ──
     getConversationIdFromHash() {
       const match = window.location.hash.match(/^#\/chat\/(\d+)$/);
@@ -377,7 +389,7 @@ createApp({
 
     // ── Check if current model is the image model ──
     isImageModel() {
-      return this.selectedModel === 'google/gemini-3-pro-image-preview';
+      return this.models.find(m => m.id === this.selectedModel)?.api_type === 'chat_completions';
     },
 
     // ── Build request body (OpenAI Responses API for text, Chat Completions for image) ──
