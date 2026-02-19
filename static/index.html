@@ -39,7 +39,12 @@
     </aside>
 
     <!-- Chat panel -->
-    <div class="chat-panel">
+    <div class="chat-panel"
+      @dragover.prevent="isDragOver = true"
+      @dragleave.self="isDragOver = false"
+      @drop.prevent="onDrop"
+      :class="{ 'drag-over': isDragOver }"
+    >
       <!-- Header -->
       <header class="header">
         <div class="header-left">
@@ -174,11 +179,15 @@
         <button @click="errorMessage = ''" class="error-close">&times;</button>
       </div>
 
-      <!-- Attached image previews -->
-      <div v-if="attachedImages.length" class="attachments-bar">
-        <div v-for="(img, idx) in attachedImages" :key="idx" class="attachment-thumb">
+      <!-- Attached image/doc previews -->
+      <div v-if="attachedImages.length || attachedDocs.length" class="attachments-bar">
+        <div v-for="(img, idx) in attachedImages" :key="'img-'+idx" class="attachment-thumb">
           <img :src="img" class="thumb-img">
           <button @click="removeAttachment(idx)" class="thumb-remove">&times;</button>
+        </div>
+        <div v-for="(doc, idx) in attachedDocs" :key="'doc-'+idx" class="attachment-thumb doc-chip">
+          <span class="doc-name">{{ doc.name }}</span>
+          <button @click="removeDoc(idx)" class="thumb-remove">&times;</button>
         </div>
       </div>
 
@@ -189,7 +198,7 @@
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
           </svg>
         </button>
-        <input type="file" ref="fileInput" @change="onFileSelected" accept="image/*" multiple style="display:none">
+        <input type="file" ref="fileInput" @change="onFileSelected" accept="image/*,.md" multiple style="display:none">
         <textarea
           v-model="inputText"
           @keydown.enter.exact.prevent="sendMessage"

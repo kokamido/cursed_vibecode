@@ -17,6 +17,8 @@ createApp({
       messages: [],
       inputText: '',
       attachedImages: [],
+      attachedDocs: [],
+      isDragOver: false,
       models: [],
       selectedModel: '',
       isLoading: false,
@@ -292,8 +294,34 @@ createApp({
 
     onFileSelected(event) {
       const files = Array.from(event.target.files);
-      files.forEach((file) => this.readAndResizeImage(file));
+      files.forEach((file) => this.attachFile(file));
       event.target.value = '';
+    },
+
+    onDrop(event) {
+      this.isDragOver = false;
+      const files = Array.from(event.dataTransfer.files);
+      files.forEach((file) => this.attachFile(file));
+    },
+
+    attachFile(file) {
+      if (file.name.endsWith('.md')) {
+        this.readDocFile(file);
+      } else {
+        this.readAndResizeImage(file);
+      }
+    },
+
+    readDocFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.attachedDocs.push({ name: file.name, content: e.target.result });
+      };
+      reader.readAsText(file);
+    },
+
+    removeDoc(idx) {
+      this.attachedDocs.splice(idx, 1);
     },
 
     readAndResizeImage(file) {
@@ -600,6 +628,7 @@ createApp({
     async sendMessage() {
       const text = this.inputText.trim();
       const images = [...this.attachedImages];
+      const docs = [...this.attachedDocs];
 
       if (!text && !images.length) return;
 
@@ -608,21 +637,32 @@ createApp({
         return;
       }
 
-      // Add user message to UI
-      const userMsg = { role: 'user', text, images };
-      this.messages.push(userMsg);
       this.inputText = '';
       this.attachedImages = [];
+      this.attachedDocs = [];
       this.$nextTick(() => {
         const el = this.$refs.messageInput;
         if (el) {
           el.style.height = 'auto';
         }
       });
-      this.scrollToBottom();
 
-      // Save user message to backend
-      await this.saveMessage('user', text, images);
+      // Add user message to UI and save
+      const userMsg = { role: 'user', text, images };
+      this.messages.push(userMsg);
+      this.scrollToBottom();
+      const savedUser = await this.saveMessage('user', text, images);
+      userMsg.id = savedUser.id;
+
+      // Inject attached doc messages after the user's message
+      for (const doc of docs) {
+        const docText = `File: ${doc.name}\n\n\`\`\`markdown\n${doc.content}\n\`\`\``;
+        const docMsg = { role: 'user', text: docText, images: [] };
+        this.messages.push(docMsg);
+        const saved = await this.saveMessage('user', docText, []);
+        docMsg.id = saved.id;
+      }
+
       await this.refreshSidebar();
 
       await this.callLlm();
