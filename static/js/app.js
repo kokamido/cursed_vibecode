@@ -31,7 +31,7 @@ createApp({
       endpoints: [],
       activeEndpointId: null,
       showEndpointPanel: false,
-      newEndpoint: { name: '', base_url: '', api_key: '' },
+      newEndpoint: { name: '', base_url: '', api_key: '', cost_per_million_input: '', cost_per_million_output: '' },
     };
   },
 
@@ -154,11 +154,11 @@ createApp({
       this.scrollToBottom();
     },
 
-    async saveMessage(role, text, images) {
+    async saveMessage(role, text, images, input_tokens = 0, output_tokens = 0, cost = null) {
       const resp = await fetch(`/api/conversations/${this.activeConversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, text, images: images || [] }),
+        body: JSON.stringify({ role, text, images: images || [], input_tokens, output_tokens, cost }),
       });
       return await resp.json();
     },
@@ -231,17 +231,23 @@ createApp({
     },
 
     async createEndpoint() {
-      const { name, base_url, api_key } = this.newEndpoint;
+      const { name, base_url, api_key, cost_per_million_input, cost_per_million_output } = this.newEndpoint;
       if (!name.trim() || !base_url.trim()) return;
       const resp = await fetch('/api/endpoints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), base_url: base_url.trim(), api_key: api_key.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          base_url: base_url.trim(),
+          api_key: api_key.trim(),
+          cost_per_million_input: Number(cost_per_million_input) || 0,
+          cost_per_million_output: Number(cost_per_million_output) || 0,
+        }),
       });
       if (resp.ok) {
         const ep = await resp.json();
         this.endpoints.push(ep);
-        this.newEndpoint = { name: '', base_url: '', api_key: '' };
+        this.newEndpoint = { name: '', base_url: '', api_key: '', cost_per_million_input: '', cost_per_million_output: '' };
         if (!this.activeEndpointId) {
           this.activeEndpointId = ep.id;
           this.saveActiveEndpointId();
@@ -314,8 +320,44 @@ createApp({
     // ── Markdown rendering ──
     renderMarkdown(text) {
       if (!text) return '';
-      const html = marked.parse(text);
-      return DOMPurify.sanitize(html);
+
+      // Extract LaTeX before marked can mangle it (e.g. _ treated as italic)
+      const mathBlocks = [];
+
+      // Display math: $$...$$
+      let src = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, latex) => {
+        const id = mathBlocks.push({ display: true, latex }) - 1;
+        return `KATEXBLOCK${id}END`;
+      });
+
+      // Inline math: $...$
+      src = src.replace(/\$([^\n$]+?)\$/g, (_, latex) => {
+        const id = mathBlocks.push({ display: false, latex }) - 1;
+        return `KATEXINLINE${id}END`;
+      });
+
+      let html = marked.parse(src);
+
+      // Restore math placeholders as KaTeX HTML
+      html = html.replace(/KATEXBLOCK(\d+)END/g, (_, i) => {
+        const { latex } = mathBlocks[Number(i)];
+        try {
+          return katex.renderToString(latex.trim(), { displayMode: true, throwOnError: false });
+        } catch (e) {
+          return `<code>$$${latex}$$</code>`;
+        }
+      });
+
+      html = html.replace(/KATEXINLINE(\d+)END/g, (_, i) => {
+        const { latex } = mathBlocks[Number(i)];
+        try {
+          return katex.renderToString(latex.trim(), { displayMode: false, throwOnError: false });
+        } catch (e) {
+          return `<code>$${latex}$</code>`;
+        }
+      });
+
+      return DOMPurify.sanitize(html, { ADD_ATTR: ['xmlns'] });
     },
 
     // ── Auto-resize textarea ──
@@ -438,7 +480,10 @@ createApp({
           }
         }
       }
-      return { text, images };
+      const usage = data.usage || {};
+      const inputTokens = usage.input_tokens || 0;
+      const outputTokens = usage.output_tokens || 0;
+      return { text, images, inputTokens, outputTokens };
     },
 
     parseChatCompletionsResponse(data, isError) {
@@ -457,7 +502,10 @@ createApp({
             }
           }
         }
-        return { text, images };
+        const usage = data.usage || {};
+        const inputTokens = usage.prompt_tokens || 0;
+        const outputTokens = usage.completion_tokens || 0;
+        return { text, images, inputTokens, outputTokens };
       }
 
       const errMsg = data.error?.message || '';
@@ -472,7 +520,7 @@ createApp({
         text = contentMatch[1];
       }
 
-      return { text, images };
+      return { text, images, inputTokens: 0, outputTokens: 0 };
     },
 
     // ── Call LLM API and handle response ──
@@ -500,7 +548,7 @@ createApp({
           if (this.isImageModel()) {
             const parsed = this.parseResponse(data, true);
             if (parsed.images.length > 0) {
-              const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images };
+              const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost: null, input_tokens: 0, output_tokens: 0 };
               this.messages.push(assistantMsg);
               const saved = await this.saveMessage('assistant', parsed.text, parsed.images);
               assistantMsg.id = saved.id;
@@ -514,9 +562,16 @@ createApp({
         }
 
         const parsed = this.parseResponse(data, false);
-        const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images };
+        const activeEndpoint = this.endpoints.find(e => e.id === this.activeEndpointId);
+        let cost = null;
+        if (activeEndpoint && (parsed.inputTokens || parsed.outputTokens)) {
+          const inputCost = (parsed.inputTokens / 1_000_000) * (activeEndpoint.cost_per_million_input || 0);
+          const outputCost = (parsed.outputTokens / 1_000_000) * (activeEndpoint.cost_per_million_output || 0);
+          cost = inputCost + outputCost;
+        }
+        const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost, input_tokens: parsed.inputTokens, output_tokens: parsed.outputTokens };
         this.messages.push(assistantMsg);
-        const saved = await this.saveMessage('assistant', parsed.text, parsed.images);
+        const saved = await this.saveMessage('assistant', parsed.text, parsed.images, parsed.inputTokens, parsed.outputTokens, cost);
         assistantMsg.id = saved.id;
         await this.refreshSidebar();
         return true;

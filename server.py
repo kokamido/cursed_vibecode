@@ -101,7 +101,12 @@ async def messages_create_handler(request):
     role = data.get("role", "user")
     text = data.get("text", "")
     images = data.get("images", [])
-    msg = await add_message(conv_id, role, text, images)
+    input_tokens = int(data.get("input_tokens", 0) or 0)
+    output_tokens = int(data.get("output_tokens", 0) or 0)
+    cost = data.get("cost")
+    if cost is not None:
+        cost = float(cost)
+    msg = await add_message(conv_id, role, text, images, input_tokens, output_tokens, cost)
     return web.json_response(msg, status=201)
 
 
@@ -146,9 +151,11 @@ async def endpoints_create_handler(request):
     name = data.get("name", "").strip()
     base_url = data.get("base_url", "").strip()
     api_key = data.get("api_key", "").strip()
+    cost_per_million_input = float(data.get("cost_per_million_input", 0) or 0)
+    cost_per_million_output = float(data.get("cost_per_million_output", 0) or 0)
     if not name or not base_url:
         return web.json_response({"error": "name and base_url required"}, status=400)
-    ep = await create_endpoint(name, base_url, api_key)
+    ep = await create_endpoint(name, base_url, api_key, cost_per_million_input, cost_per_million_output)
     return web.json_response(ep, status=201)
 
 

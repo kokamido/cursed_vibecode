@@ -7,6 +7,8 @@
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <!-- highlight.js theme -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
@@ -78,6 +80,8 @@
           <input v-model="newEndpoint.name" placeholder="Name" class="endpoint-input">
           <input v-model="newEndpoint.base_url" placeholder="Base URL (e.g. https://api.openai.com)" class="endpoint-input">
           <input v-model="newEndpoint.api_key" type="password" placeholder="API Key" class="endpoint-input">
+          <input v-model.number="newEndpoint.cost_per_million_input" type="number" min="0" step="any" placeholder="Input ₽/M tokens" class="endpoint-input endpoint-input-cost">
+          <input v-model.number="newEndpoint.cost_per_million_output" type="number" min="0" step="any" placeholder="Output ₽/M tokens" class="endpoint-input endpoint-input-cost">
           <button @click="createEndpoint" class="prompt-save-btn">Add</button>
         </div>
       </div>
@@ -149,6 +153,9 @@
                   @click="openLightbox(img)"
                 >
               </div>
+              <div v-if="msg.cost !== null && msg.cost !== undefined" class="message-cost">
+                ₽{{ msg.cost.toFixed(6) }} ({{ msg.input_tokens }}&#8593; {{ msg.output_tokens }}&#8595; tokens)
+              </div>
             </template>
           </div>
         </div>
@@ -213,6 +220,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.9/purify.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

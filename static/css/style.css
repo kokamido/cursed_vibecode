@@ -730,6 +730,20 @@ body {
   border-color: #0084ff;
 }
 
+/* ── Message Cost ── */
+.message-cost {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #888;
+  text-align: right;
+}
+
+.endpoint-input-cost {
+  min-width: 80px;
+  max-width: 140px;
+  flex: 0 1 140px;
+}
+
 /* ── Lightbox ── */
 .lightbox-overlay {
   position: fixed;

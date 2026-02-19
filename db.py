@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS messages (
     role            TEXT NOT NULL CHECK(role IN ('user','assistant')),
     text            TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    sort_order      INTEGER NOT NULL
+    sort_order      INTEGER NOT NULL,
+    input_tokens    INTEGER NOT NULL DEFAULT 0,
+    output_tokens   INTEGER NOT NULL DEFAULT 0,
+    cost            REAL
 );
 
 CREATE TABLE IF NOT EXISTS message_images (
@@ -36,11 +39,13 @@ CREATE TABLE IF NOT EXISTS system_prompts (
 );
 
 CREATE TABLE IF NOT EXISTS endpoints (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT NOT NULL,
-    base_url   TEXT NOT NULL,
-    api_key    TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                      TEXT NOT NULL,
+    base_url                  TEXT NOT NULL,
+    api_key                   TEXT NOT NULL DEFAULT '',
+    cost_per_million_input    REAL NOT NULL DEFAULT 0,
+    cost_per_million_output   REAL NOT NULL DEFAULT 0,
+    created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -59,16 +64,37 @@ async def init_db():
             await db.execute("ALTER TABLE conversations ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass
+        # Idempotent migrations: add token/cost columns to messages if missing
+        for col, typ in [
+            ("input_tokens", "INTEGER NOT NULL DEFAULT 0"),
+            ("output_tokens", "INTEGER NOT NULL DEFAULT 0"),
+            ("cost", "REAL"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE messages ADD COLUMN {col} {typ}")
+            except Exception:
+                pass
         # Idempotent migration: create endpoints table if missing
         await db.executescript("""
             CREATE TABLE IF NOT EXISTS endpoints (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                name       TEXT NOT NULL,
-                base_url   TEXT NOT NULL,
-                api_key    TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                      TEXT NOT NULL,
+                base_url                  TEXT NOT NULL,
+                api_key                   TEXT NOT NULL DEFAULT '',
+                cost_per_million_input    REAL NOT NULL DEFAULT 0,
+                cost_per_million_output   REAL NOT NULL DEFAULT 0,
+                created_at                TEXT NOT NULL DEFAULT (datetime('now'))
             );
         """)
+        # Idempotent migrations: add cost columns if missing
+        for col, typ in [
+            ("cost_per_million_input", "REAL NOT NULL DEFAULT 0"),
+            ("cost_per_million_output", "REAL NOT NULL DEFAULT 0"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE endpoints ADD COLUMN {col} {typ}")
+            except Exception:
+                pass
         await db.commit()
 
 
@@ -165,7 +191,7 @@ async def get_messages(conv_id):
     async with _db() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, role, text, sort_order FROM messages "
+            "SELECT id, role, text, sort_order, input_tokens, output_tokens, cost FROM messages "
             "WHERE conversation_id = ? ORDER BY sort_order",
             (conv_id,),
         )
@@ -188,7 +214,7 @@ async def delete_message(msg_id):
         await db.commit()
 
 
-async def add_message(conv_id, role, text, images=None):
+async def add_message(conv_id, role, text, images=None, input_tokens=0, output_tokens=0, cost=None):
     async with _db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
 
@@ -200,8 +226,8 @@ async def add_message(conv_id, role, text, images=None):
         (sort_order,) = await cursor.fetchone()
 
         cursor = await db.execute(
-            "INSERT INTO messages (conversation_id, role, text, sort_order) VALUES (?, ?, ?, ?)",
-            (conv_id, role, text, sort_order),
+            "INSERT INTO messages (conversation_id, role, text, sort_order, input_tokens, output_tokens, cost) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (conv_id, role, text, sort_order, input_tokens, output_tokens, cost),
         )
         msg_id = cursor.lastrowid
 
@@ -233,7 +259,7 @@ async def add_message(conv_id, role, text, images=None):
 
         await db.commit()
 
-        return {"id": msg_id, "role": role, "text": text, "images": images or [], "sort_order": sort_order}
+        return {"id": msg_id, "role": role, "text": text, "images": images or [], "sort_order": sort_order, "input_tokens": input_tokens, "output_tokens": output_tokens, "cost": cost}
 
 
 # ── Endpoints ──
@@ -242,7 +268,7 @@ async def list_endpoints():
     async with _db() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, name, base_url, api_key, created_at FROM endpoints ORDER BY name"
+            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, created_at FROM endpoints ORDER BY name"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -252,24 +278,24 @@ async def get_endpoint(endpoint_id):
     async with _db() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, name, base_url, api_key FROM endpoints WHERE id = ?",
+            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output FROM endpoints WHERE id = ?",
             (endpoint_id,),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
 
 
-async def create_endpoint(name, base_url, api_key):
+async def create_endpoint(name, base_url, api_key, cost_per_million_input=0, cost_per_million_output=0):
     async with _db() as db:
         cursor = await db.execute(
-            "INSERT INTO endpoints (name, base_url, api_key) VALUES (?, ?, ?)",
-            (name, base_url, api_key),
+            "INSERT INTO endpoints (name, base_url, api_key, cost_per_million_input, cost_per_million_output) VALUES (?, ?, ?, ?, ?)",
+            (name, base_url, api_key, cost_per_million_input, cost_per_million_output),
         )
         await db.commit()
         endpoint_id = cursor.lastrowid
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, name, base_url, api_key, created_at FROM endpoints WHERE id = ?",
+            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, created_at FROM endpoints WHERE id = ?",
             (endpoint_id,),
         )
         row = await cursor.fetchone()
