@@ -434,8 +434,12 @@ createApp({
         input.push({ role: 'developer', content: [{ type: 'input_text', text: this.systemPrompt.trim() }] });
       }
       for (const msg of this.messages) {
-        const content = [];
-        if (msg.role === 'user') {
+        if (msg.role === 'assistant') {
+          if (msg.text) {
+            input.push({ role: 'assistant', content: msg.text });
+          }
+        } else {
+          const content = [];
           if (msg.text) {
             content.push({ type: 'input_text', text: msg.text });
           }
@@ -444,13 +448,9 @@ createApp({
               content.push({ type: 'input_image', image_url: dataUrl });
             }
           }
-        } else {
-          if (msg.text) {
-            content.push({ type: 'output_text', text: msg.text });
+          if (content.length) {
+            input.push({ role: msg.role, content });
           }
-        }
-        if (content.length) {
-          input.push({ role: msg.role, content });
         }
       }
       return { model: this.selectedModel, input };
