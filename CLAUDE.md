@@ -4,34 +4,80 @@ This is a minimalistic web-interface allowing user to chat with LLM via OpenAI o
 
 It's crucial to use OpenAI responses API format, not native Google lib.
 
-# Features
+# Project Doc
 
-- Web chat with LLM, allowing user to:
-    - write text messages
-    - attach pictures
-    - read the answer from the model 
+## Overview
+Local LLM chat web UI. Backend proxies requests to OpenAI-compatible APIs.
+Run: `python server.py` → http://localhost:8083
 
-- Two model available to choise: 
-    - google/gemini-3-pro-preview - it answers with text
-    - google/gemini-3-pro-image-preview - it may generate pictures and answer with text
+## File Structure
+```
+server.py          # aiohttp backend, all API routes
+db.py              # aiosqlite DB layer (data/chat.db)
+requirements.txt   # aiohttp, aiohttp-cors, aiosqlite
+static/
+  index.html       # single-page app (Vue 3 CDN)
+  js/app.js        # all Vue logic (~700 lines)
+  css/style.css    # all styles
+data/chat.db       # SQLite persistent storage
+```
 
-- Maybe we need some kind of ridiculous simple backend to deal with CORS.
+## Backend API Routes (`server.py`)
 
-- Api key proided by the user via input field on the frontend. It's appropriate to store it in cookies.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Serves index.html |
+| GET | `/api/models` | Returns models.json |
+| POST | `/api/v1/responses?endpoint_id=N` | Proxy → `{base_url}/v1/responses` |
+| POST | `/api/v1/chat/completions?endpoint_id=N` | Proxy → `{base_url}/v1/chat/completions` |
+| GET/POST | `/api/conversations` | List / create |
+| DELETE/PATCH | `/api/conversations/{id}` | Delete / update (title, system_prompt) |
+| GET/POST | `/api/conversations/{id}/messages` | List / add message |
+| DELETE | `/api/conversations/{id}/messages/{msg_id}` | Delete message |
+| GET/POST | `/api/prompts` | System prompt library |
+| DELETE | `/api/prompts/{id}` | Delete saved prompt |
+| GET/POST | `/api/endpoints` | Provider endpoints |
+| DELETE | `/api/endpoints/{id}` | Delete endpoint |
 
-- Markdown in dialog is pretty formatted
+## Database Schema (`db.py`)
 
-- There is an clean way to send the image generation request to google/gemini-3-pro-image-preview
+- **conversations**: id, title, system_prompt, created_at, updated_at
+- **messages**: id, conversation_id, role (user/assistant), text, sort_order, input_tokens, output_tokens, cost (REAL), created_at
+- **message_images**: id, message_id, data_url (base64)
+- **system_prompts**: id, name, text, created_at
+- **endpoints**: id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format (responses|chat_completions), created_at
 
-- Persistent store for dialogs and pictures
+Auto-title: first user message (max 50 chars) becomes conversation title.
 
-- It should be possible to set a system prompt in interface. This prompt should be provided to LLM as first message in the chat with role 'system'. User can save prompt and reuse it further, maybe using dropdown with saved prompt or other interface element. If system prompt is empty then message with role 'system' should not be injected in chat.
+## Frontend (`static/js/app.js`)
 
+Vue 3 CDN (no build step). CDN libs: marked, highlight.js, DOMPurify, KaTeX.
 
-# Tech stack
+**Key Vue data:**
+- `messages`, `conversations`, `activeConversationId`
+- `endpoints`, `activeEndpointId` (persisted in localStorage)
+- `models`, `selectedModel`
+- `systemPrompt`, `savedPrompts`, `showPromptPanel`
+- `attachedImages` (base64 JPEG ≤1024px), `attachedDocs` (.md files as text)
 
-Backend - python + aiohttp
+**API format selection logic:**
+- `isImageModel()`: model has `api_type === 'chat_completions'` in models.json
+- `shouldUseChatCompletions()`: image model OR endpoint's `api_format === 'chat_completions'`
+- Responses API: system prompt as `role: 'developer'`, images as `input_image`
+- Chat Completions: system prompt as `role: 'system'`, images as `image_url`; image model adds `extra_body: {modalities: ['image']}`
 
-Front - HTML, CSS, Vue JS
+**Image generation:** `gemini-3-pro-image-preview` uses chat_completions. Response images parsed from `msg.images[].b64_json` or from error body regex (API quirk).
 
+**Cost tracking:** `cost = (inputTokens/1M)*cost_per_million_input + (outputTokens/1M)*cost_per_million_output`, displayed in ₽ under assistant messages.
 
+**Markdown:** marked → KaTeX ($$display$$, $inline$) → DOMPurify sanitize.
+
+**URL routing:** Hash-based `#/chat/{id}`, popstate via hashchange event.
+
+## Key Behaviors
+- Drag & drop images or .md files onto chat area
+- .md files sent as fenced code block user messages: `` ```markdown\n{content}\n``` ``
+- Images resized client-side to max 1024px, JPEG 0.85 quality
+- System prompt auto-saved on 500ms debounce after typing
+- Retry button: removes last assistant message, re-calls LLM
+- Conversation deleted → switches to next or creates new
