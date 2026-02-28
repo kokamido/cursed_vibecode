@@ -60,47 +60,6 @@ async def init_db():
     async with _db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
         await db.executescript(SCHEMA)
-        # Idempotent migration: add system_prompt column if missing
-        try:
-            await db.execute("ALTER TABLE conversations ADD COLUMN system_prompt TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass
-        # Idempotent migrations: add token/cost columns to messages if missing
-        for col, typ in [
-            ("input_tokens", "INTEGER NOT NULL DEFAULT 0"),
-            ("output_tokens", "INTEGER NOT NULL DEFAULT 0"),
-            ("cost", "REAL"),
-        ]:
-            try:
-                await db.execute(f"ALTER TABLE messages ADD COLUMN {col} {typ}")
-            except Exception:
-                pass
-        # Idempotent migration: create endpoints table if missing
-        await db.executescript("""
-            CREATE TABLE IF NOT EXISTS endpoints (
-                id                        INTEGER PRIMARY KEY AUTOINCREMENT,
-                name                      TEXT NOT NULL,
-                base_url                  TEXT NOT NULL,
-                api_key                   TEXT NOT NULL DEFAULT '',
-                cost_per_million_input    REAL NOT NULL DEFAULT 0,
-                cost_per_million_output   REAL NOT NULL DEFAULT 0,
-                created_at                TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-        """)
-        # Idempotent migrations: add cost columns if missing
-        for col, typ in [
-            ("cost_per_million_input", "REAL NOT NULL DEFAULT 0"),
-            ("cost_per_million_output", "REAL NOT NULL DEFAULT 0"),
-        ]:
-            try:
-                await db.execute(f"ALTER TABLE endpoints ADD COLUMN {col} {typ}")
-            except Exception:
-                pass
-        # Idempotent migration: add api_format column if missing
-        try:
-            await db.execute("ALTER TABLE endpoints ADD COLUMN api_format TEXT NOT NULL DEFAULT 'responses'")
-        except Exception:
-            pass
         await db.commit()
 
 
