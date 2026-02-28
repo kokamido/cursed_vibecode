@@ -160,9 +160,12 @@ async def endpoints_create_handler(request):
     api_key = data.get("api_key", "").strip()
     cost_per_million_input = float(data.get("cost_per_million_input", 0) or 0)
     cost_per_million_output = float(data.get("cost_per_million_output", 0) or 0)
+    api_format = data.get("api_format", "responses")
+    if api_format not in ("responses", "chat_completions"):
+        api_format = "responses"
     if not name or not base_url:
         return web.json_response({"error": "name and base_url required"}, status=400)
-    ep = await create_endpoint(name, base_url, api_key, cost_per_million_input, cost_per_million_output)
+    ep = await create_endpoint(name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format)
     return web.json_response(ep, status=201)
 
 

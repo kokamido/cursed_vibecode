@@ -34,7 +34,7 @@ createApp({
       endpoints: [],
       activeEndpointId: null,
       showEndpointPanel: false,
-      newEndpoint: { name: '', base_url: '', api_key: '', cost_per_million_input: '', cost_per_million_output: '' },
+      newEndpoint: { name: '', base_url: '', api_key: '', cost_per_million_input: '', cost_per_million_output: '', api_format: 'responses' },
     };
   },
 
@@ -245,7 +245,7 @@ createApp({
     },
 
     async createEndpoint() {
-      const { name, base_url, api_key, cost_per_million_input, cost_per_million_output } = this.newEndpoint;
+      const { name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format } = this.newEndpoint;
       if (!name.trim() || !base_url.trim()) return;
       const resp = await fetch('/api/endpoints', {
         method: 'POST',
@@ -256,12 +256,13 @@ createApp({
           api_key: api_key.trim(),
           cost_per_million_input: Number(cost_per_million_input) || 0,
           cost_per_million_output: Number(cost_per_million_output) || 0,
+          api_format: api_format || 'responses',
         }),
       });
       if (resp.ok) {
         const ep = await resp.json();
         this.endpoints.push(ep);
-        this.newEndpoint = { name: '', base_url: '', api_key: '', cost_per_million_input: '', cost_per_million_output: '' };
+        this.newEndpoint = { name: '', base_url: '', api_key: '', cost_per_million_input: '', cost_per_million_output: '', api_format: 'responses' };
         if (!this.activeEndpointId) {
           this.activeEndpointId = ep.id;
           this.saveActiveEndpointId();
@@ -420,9 +421,16 @@ createApp({
       return this.models.find(m => m.id === this.selectedModel)?.api_type === 'chat_completions';
     },
 
+    // ── True when we should use Chat Completions format (image model OR endpoint set to chat_completions) ──
+    shouldUseChatCompletions() {
+      if (this.isImageModel()) return true;
+      const ep = this.endpoints.find(e => e.id === this.activeEndpointId);
+      return ep?.api_format === 'chat_completions';
+    },
+
     // ── Build request body (OpenAI Responses API for text, Chat Completions for image) ──
     buildRequestBody() {
-      if (this.isImageModel()) {
+      if (this.shouldUseChatCompletions()) {
         return this.buildChatCompletionsBody();
       }
       return this.buildResponsesBody();
@@ -481,22 +489,20 @@ createApp({
           messages.push({ role: msg.role, content });
         }
       }
-      return {
-        model: this.selectedModel,
-        messages,
-        extra_body: { modalities: ['image'] },
-      };
+      const body = { model: this.selectedModel, messages };
+      if (this.isImageModel()) body.extra_body = { modalities: ['image'] };
+      return body;
     },
 
     // ── Get API endpoint based on model ──
     getApiEndpoint() {
-      const path = this.isImageModel() ? '/api/v1/chat/completions' : '/api/v1/responses';
+      const path = this.shouldUseChatCompletions() ? '/api/v1/chat/completions' : '/api/v1/responses';
       return `${path}?endpoint_id=${this.activeEndpointId}`;
     },
 
     // ── Parse response ──
     parseResponse(data, isError) {
-      if (this.isImageModel()) {
+      if (this.shouldUseChatCompletions()) {
         return this.parseChatCompletionsResponse(data, isError);
       }
       return this.parseResponsesApiResponse(data);
@@ -585,7 +591,7 @@ createApp({
         const data = await resp.json();
 
         if (!resp.ok) {
-          if (this.isImageModel()) {
+          if (this.shouldUseChatCompletions()) {
             const parsed = this.parseResponse(data, true);
             if (parsed.images.length > 0) {
               const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost: null, input_tokens: 0, output_tokens: 0 };

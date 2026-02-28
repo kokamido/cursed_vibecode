@@ -78,6 +78,7 @@
         <div v-for="ep in endpoints" :key="ep.id" class="endpoint-item">
           <span class="endpoint-name">{{ ep.name }}</span>
           <span class="endpoint-url">{{ ep.base_url }}</span>
+          <span class="endpoint-url">{{ ep.api_format === 'chat_completions' ? 'Chat Completions' : 'Responses API' }}</span>
           <button @click="deleteEndpoint(ep.id)" class="prompt-library-delete" title="Delete">&times;</button>
         </div>
         <div class="endpoint-form">
@@ -86,6 +87,10 @@
           <input v-model="newEndpoint.api_key" type="password" placeholder="API Key" class="endpoint-input">
           <input v-model.number="newEndpoint.cost_per_million_input" type="number" min="0" step="any" placeholder="Input ₽/M tokens" class="endpoint-input endpoint-input-cost">
           <input v-model.number="newEndpoint.cost_per_million_output" type="number" min="0" step="any" placeholder="Output ₽/M tokens" class="endpoint-input endpoint-input-cost">
+          <select v-model="newEndpoint.api_format" class="endpoint-input">
+            <option value="responses">Responses API</option>
+            <option value="chat_completions">Chat Completions</option>
+          </select>
           <button @click="createEndpoint" class="prompt-save-btn">Add</button>
         </div>
       </div>

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS endpoints (
     api_key                   TEXT NOT NULL DEFAULT '',
     cost_per_million_input    REAL NOT NULL DEFAULT 0,
     cost_per_million_output   REAL NOT NULL DEFAULT 0,
+    api_format                TEXT NOT NULL DEFAULT 'responses',
     created_at                TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -95,6 +96,11 @@ async def init_db():
                 await db.execute(f"ALTER TABLE endpoints ADD COLUMN {col} {typ}")
             except Exception:
                 pass
+        # Idempotent migration: add api_format column if missing
+        try:
+            await db.execute("ALTER TABLE endpoints ADD COLUMN api_format TEXT NOT NULL DEFAULT 'responses'")
+        except Exception:
+            pass
         await db.commit()
 
 
@@ -268,7 +274,7 @@ async def list_endpoints():
     async with _db() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, created_at FROM endpoints ORDER BY name"
+            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format, created_at FROM endpoints ORDER BY name"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
@@ -278,24 +284,24 @@ async def get_endpoint(endpoint_id):
     async with _db() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output FROM endpoints WHERE id = ?",
+            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format FROM endpoints WHERE id = ?",
             (endpoint_id,),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
 
 
-async def create_endpoint(name, base_url, api_key, cost_per_million_input=0, cost_per_million_output=0):
+async def create_endpoint(name, base_url, api_key, cost_per_million_input=0, cost_per_million_output=0, api_format='responses'):
     async with _db() as db:
         cursor = await db.execute(
-            "INSERT INTO endpoints (name, base_url, api_key, cost_per_million_input, cost_per_million_output) VALUES (?, ?, ?, ?, ?)",
-            (name, base_url, api_key, cost_per_million_input, cost_per_million_output),
+            "INSERT INTO endpoints (name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format),
         )
         await db.commit()
         endpoint_id = cursor.lastrowid
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, created_at FROM endpoints WHERE id = ?",
+            "SELECT id, name, base_url, api_key, cost_per_million_input, cost_per_million_output, api_format, created_at FROM endpoints WHERE id = ?",
             (endpoint_id,),
         )
         row = await cursor.fetchone()
