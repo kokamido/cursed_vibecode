@@ -362,11 +362,24 @@ createApp({
     renderMarkdown(text) {
       if (!text) return '';
 
+      // Extract code blocks first to prevent $ inside code from being treated as LaTeX
+      const codeBlocks = [];
+      // Fenced code blocks (``` or ~~~)
+      let src = text.replace(/(```|~~~)[^\n]*\n[\s\S]*?\1/g, (match) => {
+        const id = codeBlocks.push(match) - 1;
+        return `CODEBLOCK${id}END`;
+      });
+      // Inline code
+      src = src.replace(/`[^`\n]+`/g, (match) => {
+        const id = codeBlocks.push(match) - 1;
+        return `CODEINLINE${id}END`;
+      });
+
       // Extract LaTeX before marked can mangle it (e.g. _ treated as italic)
       const mathBlocks = [];
 
       // Display math: $$...$$
-      let src = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, latex) => {
+      src = src.replace(/\$\$([\s\S]+?)\$\$/g, (_, latex) => {
         const id = mathBlocks.push({ display: true, latex }) - 1;
         return `KATEXBLOCK${id}END`;
       });
@@ -376,6 +389,10 @@ createApp({
         const id = mathBlocks.push({ display: false, latex }) - 1;
         return `KATEXINLINE${id}END`;
       });
+
+      // Restore code blocks so marked can process them normally (with syntax highlighting)
+      src = src.replace(/CODEBLOCK(\d+)END/g, (_, i) => codeBlocks[Number(i)]);
+      src = src.replace(/CODEINLINE(\d+)END/g, (_, i) => codeBlocks[Number(i)]);
 
       let html = marked.parse(src);
 
