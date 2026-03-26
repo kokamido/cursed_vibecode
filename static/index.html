@@ -165,7 +165,7 @@
                 >
               </div>
               <div v-if="msg.cost !== null && msg.cost !== undefined" class="message-cost">
-                ₽{{ msg.cost.toFixed(6) }} ({{ msg.input_tokens }}&#8593; {{ msg.output_tokens }}&#8595; tokens)
+                ₽{{ msg.cost.toFixed(6) }} ({{ msg.input_tokens }}&#8593; {{ msg.output_tokens }}&#8595; tokens)<span v-if="msg.elapsed"> · {{ msg.elapsed }}s</span>
               </div>
             </template>
           </div>
@@ -176,6 +176,7 @@
             <div class="loading-dots">
               <span></span><span></span><span></span>
             </div>
+            <div class="loading-timer">{{ (requestElapsed / 1000).toFixed(1) }}s</div>
           </div>
         </div>
       </main>

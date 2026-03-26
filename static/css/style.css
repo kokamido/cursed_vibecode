@@ -403,11 +403,20 @@ body {
 /* ── Loading ── */
 .loading-bubble {
   padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .loading-dots {
   display: flex;
   gap: 4px;
+}
+
+.loading-timer {
+  font-size: 12px;
+  color: #999;
+  min-width: 36px;
 }
 
 .loading-dots span {

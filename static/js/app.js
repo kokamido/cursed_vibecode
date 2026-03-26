@@ -22,6 +22,9 @@ createApp({
       models: [],
       selectedModel: '',
       isLoading: false,
+      requestStartTime: null,
+      requestElapsed: 0,
+      requestTimerInterval: null,
       errorMessage: '',
       conversations: [],
       activeConversationId: null,
@@ -636,6 +639,11 @@ createApp({
 
       this.isLoading = true;
       this.errorMessage = '';
+      this.requestStartTime = Date.now();
+      this.requestElapsed = 0;
+      this.requestTimerInterval = setInterval(() => {
+        this.requestElapsed = Date.now() - this.requestStartTime;
+      }, 100);
 
       try {
         const body = this.buildRequestBody();
@@ -652,7 +660,7 @@ createApp({
           if (this.shouldUseChatCompletions()) {
             const parsed = this.parseResponse(data, true);
             if (parsed.images.length > 0) {
-              const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost: null, input_tokens: 0, output_tokens: 0 };
+              const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost: null, input_tokens: 0, output_tokens: 0, elapsed: ((Date.now() - this.requestStartTime) / 1000).toFixed(1) };
               this.messages.push(assistantMsg);
               const saved = await this.saveMessage('assistant', parsed.text, parsed.images);
               assistantMsg.id = saved.id;
@@ -673,7 +681,7 @@ createApp({
           const outputCost = (parsed.outputTokens / 1_000_000) * (activeEndpoint.cost_per_million_output || 0);
           cost = inputCost + outputCost;
         }
-        const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost, input_tokens: parsed.inputTokens, output_tokens: parsed.outputTokens };
+        const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost, input_tokens: parsed.inputTokens, output_tokens: parsed.outputTokens, elapsed: ((Date.now() - this.requestStartTime) / 1000).toFixed(1) };
         this.messages.push(assistantMsg);
         const saved = await this.saveMessage('assistant', parsed.text, parsed.images, parsed.inputTokens, parsed.outputTokens, cost);
         assistantMsg.id = saved.id;
@@ -683,6 +691,8 @@ createApp({
         this.errorMessage = 'Request failed: ' + err.message;
         return false;
       } finally {
+        clearInterval(this.requestTimerInterval);
+        this.requestTimerInterval = null;
         this.isLoading = false;
         this.scrollToBottom();
       }
