@@ -10,7 +10,7 @@ import asyncio
 import json
 import sys
 
-from db import create_system_prompt
+from db import init_db, create_system_prompt
 
 
 async def main(path):
@@ -20,7 +20,7 @@ async def main(path):
     if not isinstance(data, list):
         print("Error: expected JSON array of {name, text}", file=sys.stderr)
         sys.exit(1)
-
+    await init_db()
     for item in data:
         name = item.get("name", "").strip()
         text = item.get("text", "").strip()

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS messages (
     sort_order      INTEGER NOT NULL,
     input_tokens    INTEGER NOT NULL DEFAULT 0,
     output_tokens   INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens INTEGER NOT NULL DEFAULT 0,
     cost            REAL
 );
 
@@ -60,6 +61,11 @@ async def init_db():
     async with _db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
         await db.executescript(SCHEMA)
+        # Migrations
+        cursor = await db.execute("PRAGMA table_info(messages)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "reasoning_tokens" not in columns:
+            await db.execute("ALTER TABLE messages ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0")
         await db.commit()
 
 
@@ -156,7 +162,7 @@ async def get_messages(conv_id):
     async with _db() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, role, text, sort_order, input_tokens, output_tokens, cost FROM messages "
+            "SELECT id, role, text, sort_order, input_tokens, output_tokens, reasoning_tokens, cost FROM messages "
             "WHERE conversation_id = ? ORDER BY sort_order",
             (conv_id,),
         )
@@ -179,7 +185,7 @@ async def delete_message(msg_id):
         await db.commit()
 
 
-async def add_message(conv_id, role, text, images=None, input_tokens=0, output_tokens=0, cost=None):
+async def add_message(conv_id, role, text, images=None, input_tokens=0, output_tokens=0, reasoning_tokens=0, cost=None):
     async with _db() as db:
         await db.execute("PRAGMA foreign_keys = ON")
 
@@ -191,8 +197,8 @@ async def add_message(conv_id, role, text, images=None, input_tokens=0, output_t
         (sort_order,) = await cursor.fetchone()
 
         cursor = await db.execute(
-            "INSERT INTO messages (conversation_id, role, text, sort_order, input_tokens, output_tokens, cost) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (conv_id, role, text, sort_order, input_tokens, output_tokens, cost),
+            "INSERT INTO messages (conversation_id, role, text, sort_order, input_tokens, output_tokens, reasoning_tokens, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (conv_id, role, text, sort_order, input_tokens, output_tokens, reasoning_tokens, cost),
         )
         msg_id = cursor.lastrowid
 
@@ -224,7 +230,7 @@ async def add_message(conv_id, role, text, images=None, input_tokens=0, output_t
 
         await db.commit()
 
-        return {"id": msg_id, "role": role, "text": text, "images": images or [], "sort_order": sort_order, "input_tokens": input_tokens, "output_tokens": output_tokens, "cost": cost}
+        return {"id": msg_id, "role": role, "text": text, "images": images or [], "sort_order": sort_order, "input_tokens": input_tokens, "output_tokens": output_tokens, "reasoning_tokens": reasoning_tokens, "cost": cost}
 
 
 # ── Endpoints ──

@@ -171,11 +171,11 @@ createApp({
       this.scrollToBottom();
     },
 
-    async saveMessage(role, text, images, input_tokens = 0, output_tokens = 0, cost = null) {
+    async saveMessage(role, text, images, input_tokens = 0, output_tokens = 0, reasoning_tokens = 0, cost = null) {
       const resp = await fetch(`/api/conversations/${this.activeConversationId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, text, images: images || [], input_tokens, output_tokens, cost }),
+        body: JSON.stringify({ role, text, images: images || [], input_tokens, output_tokens, reasoning_tokens, cost }),
       });
       return await resp.json();
     },
@@ -590,7 +590,8 @@ createApp({
       const usage = data.usage || {};
       const inputTokens = usage.input_tokens || 0;
       const outputTokens = usage.output_tokens || 0;
-      return { text, images, inputTokens, outputTokens };
+      const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0;
+      return { text, images, inputTokens, outputTokens, reasoningTokens };
     },
 
     parseChatCompletionsResponse(data, isError) {
@@ -612,7 +613,8 @@ createApp({
         const usage = data.usage || {};
         const inputTokens = usage.prompt_tokens || 0;
         const outputTokens = usage.completion_tokens || 0;
-        return { text, images, inputTokens, outputTokens };
+        const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens || 0;
+        return { text, images, inputTokens, outputTokens, reasoningTokens };
       }
 
       const errMsg = data.error?.message || '';
@@ -627,7 +629,7 @@ createApp({
         text = contentMatch[1];
       }
 
-      return { text, images, inputTokens: 0, outputTokens: 0 };
+      return { text, images, inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
     },
 
     // ── Call LLM API and handle response ──
@@ -678,12 +680,12 @@ createApp({
         let cost = null;
         if (activeEndpoint && (parsed.inputTokens || parsed.outputTokens)) {
           const inputCost = (parsed.inputTokens / 1_000_000) * (activeEndpoint.cost_per_million_input || 0);
-          const outputCost = (parsed.outputTokens / 1_000_000) * (activeEndpoint.cost_per_million_output || 0);
+          const outputCost = ((parsed.outputTokens + parsed.reasoningTokens) / 1_000_000) * (activeEndpoint.cost_per_million_output || 0);
           cost = inputCost + outputCost;
         }
-        const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost, input_tokens: parsed.inputTokens, output_tokens: parsed.outputTokens, elapsed: ((Date.now() - this.requestStartTime) / 1000).toFixed(1) };
+        const assistantMsg = { role: 'assistant', text: parsed.text, images: parsed.images, cost, input_tokens: parsed.inputTokens, output_tokens: parsed.outputTokens, reasoning_tokens: parsed.reasoningTokens, elapsed: ((Date.now() - this.requestStartTime) / 1000).toFixed(1) };
         this.messages.push(assistantMsg);
-        const saved = await this.saveMessage('assistant', parsed.text, parsed.images, parsed.inputTokens, parsed.outputTokens, cost);
+        const saved = await this.saveMessage('assistant', parsed.text, parsed.images, parsed.inputTokens, parsed.outputTokens, parsed.reasoningTokens, cost);
         assistantMsg.id = saved.id;
         await this.refreshSidebar();
         return true;
