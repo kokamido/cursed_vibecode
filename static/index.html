@@ -103,6 +103,8 @@
             <option v-for="sp in savedPrompts" :key="sp.id" :value="sp.id">{{ sp.name }}</option>
           </select>
           <button @click="saveCurrentPrompt" class="prompt-save-btn" title="Save current prompt">Save</button>
+          <button @click="exportPrompts" class="prompt-save-btn" title="Export prompts to file">Export</button>
+          <button @click="importPrompts" class="prompt-save-btn" title="Import prompts from file">Import</button>
         </div>
         <textarea
           v-model="systemPrompt"

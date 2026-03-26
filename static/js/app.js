@@ -234,6 +234,47 @@ createApp({
       await this.loadSavedPrompts();
     },
 
+    exportPrompts() {
+      if (!this.savedPrompts.length) return;
+      const data = this.savedPrompts.map(p => ({ name: p.name, text: p.text }));
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'prompts.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    importPrompts() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          if (!Array.isArray(data)) throw new Error('Expected array');
+          const existingNames = new Set(this.savedPrompts.map(p => p.name));
+          for (const item of data) {
+            if (!item.name || typeof item.name !== 'string' || !item.text || typeof item.text !== 'string') continue;
+            if (existingNames.has(item.name)) continue;
+            await fetch('/api/prompts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: item.name, text: item.text }),
+            });
+          }
+          await this.loadSavedPrompts();
+        } catch (e) {
+          alert('Failed to import prompts: ' + e.message);
+        }
+      };
+      input.click();
+    },
+
     togglePromptPanel() {
       this.showPromptPanel = !this.showPromptPanel;
     },
