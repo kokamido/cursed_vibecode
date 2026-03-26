@@ -110,10 +110,11 @@ async def messages_create_handler(request):
     images = data.get("images", [])
     input_tokens = int(data.get("input_tokens", 0) or 0)
     output_tokens = int(data.get("output_tokens", 0) or 0)
+    reasoning_tokens = int(data.get("reasoning_tokens", 0) or 0)
     cost = data.get("cost")
     if cost is not None:
         cost = float(cost)
-    msg = await add_message(conv_id, role, text, images, input_tokens, output_tokens, cost)
+    msg = await add_message(conv_id, role, text, images, input_tokens, output_tokens, reasoning_tokens, cost)
     return web.json_response(msg, status=201)
 
 
@@ -138,6 +139,21 @@ async def prompts_create_handler(request):
         return web.json_response({"error": "name and text required"}, status=400)
     prompt = await create_system_prompt(name, text)
     return web.json_response(prompt, status=201)
+
+
+async def prompts_import_handler(request):
+    data = await request.json()
+    if not isinstance(data, list):
+        return web.json_response({"error": "expected JSON array of {name, text}"}, status=400)
+    imported = []
+    for item in data:
+        name = item.get("name", "").strip()
+        text = item.get("text", "").strip()
+        if not name or not text:
+            continue
+        prompt = await create_system_prompt(name, text)
+        imported.append(prompt)
+    return web.json_response(imported, status=201)
 
 
 async def prompts_delete_handler(request):
@@ -209,6 +225,7 @@ def create_app():
     # System prompts library routes
     app.router.add_get("/api/prompts", prompts_list_handler)
     app.router.add_post("/api/prompts", prompts_create_handler)
+    app.router.add_post("/api/prompts/import", prompts_import_handler)
     app.router.add_delete("/api/prompts/{id}", prompts_delete_handler)
 
     # Endpoint routes
